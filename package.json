@@ -1,0 +1,51 @@
+{
+  "name": "veyra",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local VPN profile configurator for Mihomo/Clash-compatible VLESS configs.",
+  "main": "apps/desktop/main.js",
+  "scripts": {
+    "dev": "node apps/api/server.js",
+    "api": "node apps/api/server.js",
+    "start": "node apps/desktop/launch.js",
+    "desktop": "node apps/desktop/launch.js",
+    "desktop:admin": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File apps/desktop/start-admin.ps1",
+    "dev:desktop": "node apps/desktop/launch.js",
+    "build:win": "electron-builder --win",
+    "dist": "electron-builder",
+    "check": "node --check apps/api/server.js && node --check apps/api/mihomo-runtime.js && node --check apps/desktop/main.js && node --check apps/desktop/launch.js && node --check packages/mihomo-engine/index.js && node --check apps/web/app.js"
+  },
+  "devDependencies": {
+    "electron": "^42.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
+  "build": {
+    "appId": "com.ressy.veyra",
+    "productName": "Veyra",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "apps/**/*",
+      "packages/**/*",
+      "engine/**/*",
+      "data/.gitkeep",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "asarUnpack": [
+      "engine/bin/**"
+    ],
+    "win": {
+      "target": "nsis",
+      "requestedExecutionLevel": "requireAdministrator"
+    }
+  }
+}

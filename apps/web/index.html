@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Veyra</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">v.0.1.0 (beta)</p>
+          <h1>Veyra</h1>
+        </div>
+        <div class="top-actions">
+          <button class="ghost" id="loadSample" type="button">Сбросить настройки</button>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Разделы конфигуратора">
+        <button class="active" data-tab="servers" type="button">Серверы</button>
+        <button data-tab="settings" type="button">Настройки</button>
+      </nav>
+
+      <main class="layout">
+        <section class="workspace">
+          <section class="tab-panel" data-tab-panel="servers">
+            <div class="panel hero-panel">
+              <div>
+                <label for="profileName">Название профиля</label>
+                <input id="profileName" type="text" autocomplete="off">
+              </div>
+              <div class="status-grid" aria-live="polite">
+                <div>
+                  <span id="nodeCount">0</span>
+                  <small>выбрано</small>
+                </div>
+                <div>
+                  <span id="ruleCount">0</span>
+                  <small>правил</small>
+                </div>
+                <div>
+                  <span id="groupCount">0</span>
+                  <small>групп</small>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="section-title">
+                <h2>Импорт подписки</h2>
+                <button class="ghost" id="importBtn" type="button">Импортировать</button>
+              </div>
+              <textarea id="importText" rows="5" placeholder="https://... или vless://... или base64-подписка"></textarea>
+              <div id="importErrors" class="notice hidden"></div>
+            </div>
+            <section class="panel runtime-panel">
+            <div class="connection-card">
+              <div class="connection-top">
+                <h2>Подключение</h2>
+                <span class="connection-badge" id="runtimeState">Проверка...</span>
+              </div>
+              <button class="connect-button" id="runtimeToggle" type="button" aria-pressed="false">
+                <span class="connect-orb" aria-hidden="true">
+                  <span class="connect-shield"></span>
+                </span>
+                <span id="runtimeToggleText">Подключить</span>
+              </button>
+              <strong class="connection-server" id="selectedRuntimeServer">Сервер не выбран</strong>
+            </div>
+            <details class="runtime-details">
+              <summary>Детали runtime</summary>
+              <div class="runtime-status">
+                <div>
+                  <small>Бинарник</small>
+                  <span id="runtimeBinary">engine/bin/mihomo.exe</span>
+                </div>
+              </div>
+              <pre id="runtimeLogs" class="runtime-log">Логов пока нет.</pre>
+            </details>
+          </section>
+            <div class="panel">
+              <div class="section-title">
+                <div>
+                  <h2>Серверы</h2>
+                  <p class="section-caption">Выбери один сервер из импортированной подписки. Детали конфига скрыты, в YAML попадет только выбранный сервер.</p>
+                </div>
+                <div class="section-actions">
+                  <button class="secondary" id="pingNodesBtn" type="button">Пинг</button>
+                  <button class="secondary hidden" id="addNodeBtn" type="button">Добавить вручную</button>
+                </div>
+              </div>
+              <div id="nodesList" class="nodes-list"></div>
+            </div>
+          </section>
+
+          <section class="tab-panel hidden" data-tab-panel="settings">
+            <div class="settings-grid">
+              <section class="panel">
+                <div class="section-title">
+                  <h2>Маршрутизация</h2>
+                </div>
+                <div class="segmented" role="group" aria-label="Режим маршрутизации">
+                  <button data-mode="rule" type="button">Rule</button>
+                  <button data-mode="global" type="button">Global</button>
+                  <button data-mode="direct" type="button">Direct</button>
+                </div>
+                <div class="form-grid two">
+                  <label>
+                    Mixed port
+                    <input id="mixedPort" type="number" min="1" max="65535">
+                  </label>
+                  <label>
+                    Socks port
+                    <input id="socksPort" type="number" min="1" max="65535">
+                  </label>
+                  <label>
+                    Controller
+                    <input id="externalController" type="text">
+                  </label>
+                  <label>
+                    Log level
+                    <select id="logLevel">
+                      <option>debug</option>
+                      <option>info</option>
+                      <option>warning</option>
+                      <option>error</option>
+                      <option>silent</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="switch-row">
+                  <label><input id="allowLan" type="checkbox"> Allow LAN</label>
+                  <label><input id="ipv6" type="checkbox"> IPv6</label>
+                </div>
+              </section>
+
+              <section class="panel">
+                <div class="section-title">
+                  <h2>TUN</h2>
+                  <label class="toggle"><input id="tunEnabled" type="checkbox"><span></span></label>
+                </div>
+                <div class="form-grid two">
+                  <label>
+                    Stack
+                    <select id="tunStack">
+                      <option>mixed</option>
+                      <option>system</option>
+                      <option>gvisor</option>
+                    </select>
+                  </label>
+                  <label>
+                    DNS hijack
+                    <input id="dnsHijack" type="text">
+                  </label>
+                </div>
+                <div class="switch-row">
+                  <label><input id="autoRoute" type="checkbox"> Auto route</label>
+                  <label><input id="strictRoute" type="checkbox"> Strict route</label>
+                </div>
+              </section>
+            </div>
+
+            <div class="settings-grid">
+              <section class="panel">
+                <div class="section-title">
+                  <h2>DNS</h2>
+                  <label class="toggle"><input id="dnsEnabled" type="checkbox"><span></span></label>
+                </div>
+                <div class="form-grid two">
+                  <label>
+                    Enhanced mode
+                    <select id="enhancedMode">
+                      <option>fake-ip</option>
+                      <option>redir-host</option>
+                      <option>normal</option>
+                    </select>
+                  </label>
+                  <label>
+                    Listen
+                    <input id="dnsListen" type="text">
+                  </label>
+                </div>
+                <label>
+                  Nameservers
+                  <textarea id="nameservers" rows="3"></textarea>
+                </label>
+                <label>
+                  Fallback
+                  <textarea id="fallbackDns" rows="3"></textarea>
+                </label>
+              </section>
+
+              <section class="panel">
+                <div class="section-title">
+                  <h2>Группы и правила</h2>
+                </div>
+                <div class="switch-row">
+                  <label><input id="groupAuto" type="checkbox"> AUTO</label>
+                  <label><input id="groupFallback" type="checkbox"> FALLBACK</label>
+                  <label><input id="groupLoadBalance" type="checkbox"> LOAD-BALANCE</label>
+                </div>
+                <div class="form-grid two">
+                  <label>
+                    Test URL
+                    <input id="testUrl" type="url">
+                  </label>
+                  <label>
+                    Interval
+                    <input id="interval" type="number" min="30">
+                  </label>
+                </div>
+                <div class="switch-row">
+                  <label><input id="bypassPrivate" type="checkbox"> Private direct</label>
+                  <label><input id="blockAds" type="checkbox"> Basic ad block</label>
+                </div>
+                <label>
+                  Custom rules
+                  <textarea id="customRules" rows="5" placeholder="DOMAIN-SUFFIX,example.com,PROXY"></textarea>
+                </label>
+              </section>
+            </div>
+          </section>
+        </section>
+
+        <aside class="preview">
+          <section class="panel yaml-panel">
+            <div class="section-title">
+              <h2>YAML</h2>
+              <div class="preview-actions">
+                <button class="ghost" id="copyBtn" type="button">Копировать</button>
+                <button class="secondary" id="saveBtn" type="button">Сохранить</button>
+              </div>
+            </div>
+            <div id="warnings" class="notice hidden"></div>
+            <pre id="yamlPreview">Загрузка...</pre>
+            <a id="downloadLink" class="download hidden" href="#">Скачать последний профиль</a>
+          </section>
+          <section class="panel saved-panel">
+            <div class="section-title">
+              <h2>Сохраненные</h2>
+              <button class="ghost" id="refreshProfiles" type="button">Обновить</button>
+            </div>
+            <div id="savedProfiles" class="saved-list"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <template id="nodeTemplate">
+      <article class="node-card">
+        <label class="server-option">
+          <input data-field="enabled" name="selectedServer" type="radio">
+          <span class="server-copy">
+            <strong data-server-name></strong>
+            <small data-node-meta></small>
+          </span>
+          <span class="server-latency" data-node-latency>—</span>
+        </label>
+      </article>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
