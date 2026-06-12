@@ -2,45 +2,6 @@
 
 Локальное desktop-приложение в стиле Clash-клиентов: импортирует `vless://` ссылки или подписку, дает выбрать один сервер, настраивает профиль и генерирует YAML для `mihomo`.
 
-## Запуск
-
-```powershell
-npm install
-npm start
-```
-
-Для TUN-режима на Windows запусти приложение с правами администратора:
-
-```powershell
-npm run desktop:admin
-```
-
-API без окна:
-
-```powershell
-npm run api
-```
-
-Если нужен другой порт:
-
-```powershell
-$env:PORT=8790
-node apps/api/server.js
-```
-
-## Что уже есть
-
-- Импорт обычных `vless://` ссылок, base64-подписок и удаленных URL-подписок.
-- URL-подписки скачиваются с Koala-compatible headers (`User-Agent`, HWID/device headers), затем парсятся как Mihomo YAML или URI-подписка.
-- Две вкладки интерфейса: `Серверы` для импорта и выбора одного узла, `Настройки` для параметров Mihomo.
-- Детали импортированных VLESS узлов скрыты в интерфейсе; в YAML попадает только выбранный сервер.
-- Генерация `mihomo` YAML с `proxies`, `proxy-groups`, `rules`, `dns`, `tun`.
-- Режимы `rule`, `global`, `direct`.
-- Группы `PROXY`, `AUTO`, `FALLBACK`, `LOAD-BALANCE`.
-- Сохранение профиля в `data/profiles` и скачивание YAML.
-- Runtime-слой для `mihomo.exe`: старт, стоп, статус, логи.
-- API без внешних зависимостей, чтобы проект стартовал сразу.
-
 ## Структура
 
 ```text
