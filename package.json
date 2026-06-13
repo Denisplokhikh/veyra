@@ -1,6 +1,6 @@
 {
   "name": "veyra",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Local VPN profile configurator for Mihomo/Clash-compatible VLESS configs.",
@@ -45,6 +45,7 @@
     ],
     "win": {
       "target": "nsis",
+      "icon": "apps/desktop/icon.ico",
       "requestedExecutionLevel": "requireAdministrator"
     }
   }

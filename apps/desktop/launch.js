@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, '../..');
 const env = { ...process.env };
 
 delete env.ELECTRON_RUN_AS_NODE;
+env.VEYRA_DEV_INSTANCE = '1';
 
 const args = process.argv.length > 2 ? process.argv.slice(2) : ['apps/desktop/main.js'];
 const child = spawn(electronPath, args, {

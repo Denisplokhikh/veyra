@@ -2,18 +2,24 @@ const state = {
   profile: null,
   yaml: '',
   saveUrl: '',
-  runtimeStatus: null
+  runtimeStatus: null,
+  configs: [],
+  activeConfigId: null,
+  configStatuses: new Map(),
+  expandedConfigIds: new Set()
 };
 
 const TWEMOJI_BASE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/';
 
 const elements = {
+  layout: document.querySelector('.layout'),
   profileName: document.querySelector('#profileName'),
   nodeCount: document.querySelector('#nodeCount'),
   ruleCount: document.querySelector('#ruleCount'),
   groupCount: document.querySelector('#groupCount'),
   importText: document.querySelector('#importText'),
   importErrors: document.querySelector('#importErrors'),
+  pasteImportBtn: document.querySelector('#pasteImportBtn'),
   importBtn: document.querySelector('#importBtn'),
   pingNodesBtn: document.querySelector('#pingNodesBtn'),
   addNodeBtn: document.querySelector('#addNodeBtn'),
@@ -23,10 +29,7 @@ const elements = {
   yamlPreview: document.querySelector('#yamlPreview'),
   warnings: document.querySelector('#warnings'),
   copyBtn: document.querySelector('#copyBtn'),
-  saveBtn: document.querySelector('#saveBtn'),
-  downloadLink: document.querySelector('#downloadLink'),
   savedProfiles: document.querySelector('#savedProfiles'),
-  refreshProfiles: document.querySelector('#refreshProfiles'),
   runtimeToggle: document.querySelector('#runtimeToggle'),
   runtimeToggleText: document.querySelector('#runtimeToggleText'),
   runtimeState: document.querySelector('#runtimeState'),
@@ -35,6 +38,7 @@ const elements = {
   runtimeLogs: document.querySelector('#runtimeLogs'),
   tabButtons: Array.from(document.querySelectorAll('[data-tab]')),
   tabPanels: Array.from(document.querySelectorAll('[data-tab-panel]')),
+  tabPreviews: Array.from(document.querySelectorAll('[data-tab-preview]')),
   modeButtons: Array.from(document.querySelectorAll('[data-mode]')),
   mixedPort: document.querySelector('#mixedPort'),
   socksPort: document.querySelector('#socksPort'),
@@ -79,7 +83,7 @@ async function init() {
   render();
   isHydrating = false;
   await generate();
-  await loadProfiles();
+  await renderSavedConfigs();
   await loadRuntimeStatus();
   window.setInterval(loadRuntimeStatus, 5000);
 }
@@ -87,12 +91,11 @@ async function init() {
 function bindEvents() {
   elements.generateBtn?.addEventListener('click', generate);
   elements.loadSample.addEventListener('click', loadSample);
+  elements.pasteImportBtn.addEventListener('click', pasteImportText);
   elements.importBtn.addEventListener('click', importLinks);
   elements.pingNodesBtn.addEventListener('click', pingTcpServers);
   elements.importText.addEventListener('input', scheduleStateSave);
   elements.copyBtn.addEventListener('click', copyYaml);
-  elements.saveBtn.addEventListener('click', saveProfile);
-  elements.refreshProfiles.addEventListener('click', loadProfiles);
   elements.runtimeToggle.addEventListener('click', toggleRuntime);
 
   elements.addNodeBtn?.addEventListener('click', () => {
@@ -142,6 +145,8 @@ function bindEvents() {
     elements.blockAds,
     elements.customRules
   ].forEach((element) => {
+    if (!element) return;
+
     element.addEventListener('input', () => {
       updateProfileFromForm();
       scheduleGenerate();
@@ -153,24 +158,50 @@ function bindEvents() {
 }
 
 async function loadInitialProfile() {
+  const sample = withTunEnabled(await request('/api/sample'));
+
   try {
     const saved = await request('/api/state');
-    if (saved.profile) {
-      state.profile = saved.profile;
-      elements.importText.value = saved.importText || '';
+    state.configs = normalizeSavedConfigs(saved.configs);
+    state.activeConfigId = saved.activeConfigId || state.configs[0]?.id || null;
+    state.profile = withTunEnabled(saved.profile || sample);
+    elements.importText.value = saved.importText || '';
+
+    if (state.configs.length) {
+      const activeConfig = getActiveConfig() || state.configs[0];
+      state.activeConfigId = activeConfig.id;
+      state.expandedConfigIds.add(activeConfig.id);
+      applyConfigToProfile(activeConfig);
+    } else if (state.profile.nodes?.length) {
+      const migrated = createSavedConfig({
+        name: state.profile.name || 'Импортированный конфиг',
+        sourceType: 'legacy',
+        importText: saved.importText || '',
+        nodes: state.profile.nodes.map((node) => ({ ...node, enabled: undefined })),
+        selectedIndex: Math.max(0, state.profile.nodes.findIndex((node) => node.enabled !== false))
+      });
+      state.configs = [migrated];
+      state.activeConfigId = migrated.id;
+      state.expandedConfigIds.add(migrated.id);
+      applyConfigToProfile(migrated);
+    }
+
+    if (state.profile) {
       return;
     }
   } catch {
     // Fall back to the sample profile if persisted state is unavailable.
   }
 
-  state.profile = await request('/api/sample');
+  state.profile = sample;
 }
 
 async function loadSample() {
-  state.profile = await request('/api/sample');
+  state.profile = withTunEnabled(await request('/api/sample'));
   state.profile.name = 'Mihomo VLESS Profile';
   state.profile.nodes = [];
+  state.configs = [];
+  state.activeConfigId = null;
   tcpPingResults.clear();
   elements.importText.value = '';
   render();
@@ -178,24 +209,47 @@ async function loadSample() {
   await saveAppState();
 }
 
+async function pasteImportText() {
+  elements.pasteImportBtn.disabled = true;
+
+  try {
+    if (!navigator.clipboard?.readText) {
+      throw new Error('Буфер обмена недоступен в этом режиме запуска.');
+    }
+
+    const text = await navigator.clipboard.readText();
+    if (!text.trim()) {
+      renderImportErrors([{ message: 'Буфер обмена пуст.' }]);
+      return;
+    }
+
+    elements.importText.value = text.trim();
+    elements.importText.focus();
+    renderImportErrors([]);
+    scheduleStateSave();
+  } catch (error) {
+    renderImportErrors([{ message: `Не получилось вставить из буфера: ${error.message}` }]);
+  } finally {
+    elements.pasteImportBtn.disabled = false;
+  }
+}
+
 async function importLinks() {
   elements.importBtn.disabled = true;
 
   try {
+    const input = elements.importText.value.trim();
     const imported = await request('/api/import', {
       method: 'POST',
-      body: { text: elements.importText.value }
+      body: { text: input }
     });
 
     if (imported.nodes.length) {
-      if (imported.profile?.title) {
-        state.profile.name = imported.profile.title;
-        elements.profileName.value = imported.profile.title;
-      }
-      state.profile.nodes = imported.nodes.map(toUiNode);
+      const config = upsertImportedConfig(imported, input);
+      state.activeConfigId = config.id;
+      applyConfigToProfile(config);
       tcpPingResults.clear();
-      enforceSingleSelectedServer();
-      renderNodes();
+      render();
       await generate();
       await saveAppState();
     }
@@ -210,15 +264,25 @@ async function importLinks() {
 
 async function pingTcpServers() {
   const nodes = (state.profile?.nodes || []).filter((node) => node.server && node.port);
+  await pingNodesByTcp(nodes);
+}
+
+async function pingConfigServers(configId) {
+  const config = state.configs.find((item) => item.id === configId);
+  const nodes = (config?.nodes || []).filter((node) => node.server && node.port);
+  await pingNodesByTcp(nodes);
+}
+
+async function pingNodesByTcp(nodes) {
   if (!nodes.length || tcpPingBusy) return;
 
   tcpPingBusy = true;
-  renderPingButton();
+  renderPingViews();
 
   nodes.forEach((node) => {
     tcpPingResults.set(getNodePingKey(node), { status: 'pending' });
   });
-  renderNodes();
+  renderPingViews();
 
   try {
     const data = await request('/api/ping/tcp', {
@@ -250,9 +314,14 @@ async function pingTcpServers() {
     });
   } finally {
     tcpPingBusy = false;
-    renderPingButton();
-    renderNodes();
+    renderPingViews();
   }
+}
+
+function renderPingViews() {
+  renderPingButton();
+  renderNodes();
+  renderSavedConfigs();
 }
 
 async function generate() {
@@ -271,26 +340,6 @@ async function generate() {
     renderSummary(generated.summary);
   } finally {
     if (elements.generateBtn) elements.generateBtn.disabled = false;
-  }
-}
-
-async function saveProfile() {
-  updateProfileFromForm();
-  enforceSingleSelectedServer();
-  elements.saveBtn.disabled = true;
-
-  try {
-    const saved = await request('/api/profiles', {
-      method: 'POST',
-      body: state.profile
-    });
-    state.saveUrl = saved.downloadUrl;
-    elements.downloadLink.href = saved.downloadUrl;
-    elements.downloadLink.classList.remove('hidden');
-    renderWarnings(saved.warnings);
-    await loadProfiles();
-  } finally {
-    elements.saveBtn.disabled = false;
   }
 }
 
@@ -333,6 +382,263 @@ async function deleteProfile(id) {
   });
 
   await loadProfiles();
+}
+
+async function renderSavedConfigs() {
+  elements.savedProfiles.innerHTML = '';
+
+  if (!state.configs.length) {
+    elements.savedProfiles.innerHTML = '<div class="notice">Пока нет сохраненных конфигов. Импортируй подписку, и она появится здесь автоматически.</div>';
+    return;
+  }
+
+  state.configs.forEach((config) => {
+    elements.savedProfiles.append(createSavedConfigCard(config));
+  });
+}
+
+function createSavedConfigCard(config) {
+  const selectedIndex = getConfigSelectedIndex(config);
+  const expanded = state.expandedConfigIds.has(config.id);
+  const status = state.configStatuses.get(config.id);
+  const item = document.createElement('article');
+  item.className = `saved-item config-card${config.id === state.activeConfigId ? ' selected' : ''}${expanded ? ' expanded' : ''}`;
+  item.dataset.configId = config.id;
+
+  const header = document.createElement('div');
+  header.className = 'config-header';
+
+  const toggle = document.createElement('button');
+  toggle.className = 'config-toggle';
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', String(expanded));
+  toggle.addEventListener('click', () => toggleSavedConfig(config.id));
+
+  const heading = document.createElement('span');
+  heading.className = 'config-heading';
+
+  const title = document.createElement('strong');
+  renderEmojiText(title, config.name || 'VPN конфиг');
+
+  const meta = document.createElement('small');
+  meta.textContent = `${formatDate(config.updatedAt || config.createdAt)} · ${config.nodes.length} сервер${getRussianPlural(config.nodes.length, '', 'а', 'ов')}`;
+
+  heading.append(title, meta);
+  toggle.append(heading);
+
+  const actions = document.createElement('div');
+  actions.className = 'saved-actions';
+
+  const updateButton = document.createElement('button');
+  updateButton.className = 'secondary';
+  updateButton.type = 'button';
+  updateButton.textContent = 'Обновить';
+  updateButton.addEventListener('click', () => updateSavedConfig(config.id));
+
+  const removeButton = document.createElement('button');
+  removeButton.className = 'danger-button';
+  removeButton.type = 'button';
+  removeButton.textContent = 'Удалить';
+  removeButton.addEventListener('click', () => removeSavedConfig(config.id));
+
+  actions.append(updateButton, removeButton);
+  header.append(toggle, actions);
+  item.append(header);
+
+  if (status) {
+    const statusNode = document.createElement('small');
+    statusNode.className = `config-status ${status.type}`;
+    statusNode.textContent = status.message;
+    item.append(statusNode);
+  }
+
+  const bodyWrap = document.createElement('div');
+  bodyWrap.className = 'config-body-wrap';
+  bodyWrap.setAttribute('aria-hidden', String(!expanded));
+  bodyWrap.inert = !expanded;
+  bodyWrap.append(createSavedConfigServerPanel(config, selectedIndex));
+  item.append(bodyWrap);
+
+  return item;
+}
+
+function createSavedConfigServerPanel(config, selectedIndex) {
+  const body = document.createElement('div');
+  body.className = 'config-body';
+
+  const top = document.createElement('div');
+  top.className = 'config-servers-title';
+
+  const copy = document.createElement('div');
+  const title = document.createElement('h3');
+  title.textContent = 'Серверы';
+  const caption = document.createElement('p');
+  caption.textContent = 'Выбери один сервер из импортированной подписки. Детали конфига скрыты.';
+  copy.append(title, caption);
+
+  const pingButton = document.createElement('button');
+  pingButton.className = 'secondary config-ping-button';
+  pingButton.type = 'button';
+  pingButton.textContent = tcpPingBusy ? 'Пингуем...' : 'Пинг';
+  pingButton.disabled = tcpPingBusy || !config.nodes.some((node) => node.server && node.port);
+  pingButton.addEventListener('click', () => pingConfigServers(config.id));
+
+  top.append(copy, pingButton);
+  body.append(top);
+
+  const list = document.createElement('div');
+  list.className = 'nodes-list config-server-list';
+
+  config.nodes.forEach((node, index) => {
+    list.append(createSavedConfigServerCard(config, node, index, selectedIndex));
+  });
+
+  body.append(list);
+  return body;
+}
+
+function createSavedConfigServerCard(config, node, index, selectedIndex) {
+  const card = document.createElement('article');
+  card.className = `node-card config-server-card${index === selectedIndex ? ' selected' : ''}`;
+
+  const label = document.createElement('label');
+  label.className = 'server-option';
+
+  const input = document.createElement('input');
+  input.type = 'radio';
+  input.name = `config-server-${config.id}`;
+  input.checked = index === selectedIndex;
+  input.addEventListener('change', () => selectConfigServer(config.id, index));
+
+  const copy = document.createElement('span');
+  copy.className = 'server-copy';
+
+  const title = document.createElement('strong');
+  renderEmojiText(title, node.name || `Сервер ${index + 1}`);
+
+  const meta = document.createElement('small');
+  meta.textContent = getNodeMeta(node);
+
+  const latency = document.createElement('span');
+  renderNodeLatency(latency, node);
+
+  copy.append(title, meta);
+  label.append(input, copy, latency);
+  card.append(label);
+  return card;
+}
+
+function toggleSavedConfig(id) {
+  const wasExpanded = state.expandedConfigIds.has(id);
+
+  if (wasExpanded) {
+    state.expandedConfigIds.delete(id);
+  } else {
+    state.expandedConfigIds.add(id);
+  }
+
+  const expanded = !wasExpanded;
+  const card = Array.from(elements.savedProfiles.querySelectorAll('.config-card'))
+    .find((item) => item.dataset.configId === id);
+
+  if (!card) {
+    renderSavedConfigs();
+    return;
+  }
+
+  card.classList.toggle('expanded', expanded);
+  card.querySelector('.config-toggle')?.setAttribute('aria-expanded', String(expanded));
+
+  const bodyWrap = card.querySelector('.config-body-wrap');
+  if (bodyWrap) {
+    bodyWrap.setAttribute('aria-hidden', String(!expanded));
+    bodyWrap.inert = !expanded;
+  }
+}
+
+async function removeSavedConfig(id) {
+  const ok = window.confirm('Удалить сохраненный конфиг?');
+  if (!ok) return;
+
+  const removedIndex = state.configs.findIndex((config) => config.id === id);
+  state.configs = state.configs.filter((config) => config.id !== id);
+  state.configStatuses.delete(id);
+  state.expandedConfigIds.delete(id);
+
+  if (state.activeConfigId === id) {
+    const nextConfig = state.configs[Math.max(0, removedIndex - 1)] || state.configs[0] || null;
+    state.activeConfigId = nextConfig?.id || null;
+
+    if (nextConfig) {
+      applyConfigToProfile(nextConfig);
+    } else {
+      state.profile.nodes = [];
+      state.profile.name = 'Mihomo VLESS Profile';
+      tcpPingResults.clear();
+    }
+  }
+
+  await renderSavedConfigs();
+  render();
+  await generate();
+  await saveAppState();
+}
+
+async function updateSavedConfig(id) {
+  const config = state.configs.find((item) => item.id === id);
+  if (!config) return;
+
+  const source = config.sourceUrl || config.importText;
+  if (!source) {
+    state.configStatuses.set(id, { type: 'error', message: 'Нет ссылки для обновления.' });
+    await renderSavedConfigs();
+    return;
+  }
+
+  state.configStatuses.set(id, { type: 'pending', message: 'Обновляем подписку...' });
+  await renderSavedConfigs();
+
+  try {
+    const imported = await request('/api/import', {
+      method: 'POST',
+      body: { text: source }
+    });
+
+    if (!imported.nodes.length) {
+      state.configStatuses.set(id, { type: 'error', message: 'Провайдер не вернул серверы.' });
+      await renderSavedConfigs();
+      return;
+    }
+
+    const previousKeys = config.nodes.map(getNodeStableKey).join('\n');
+    const previousSelected = config.nodes[getConfigSelectedIndex(config)];
+    config.nodes = imported.nodes.map((node) => ({ ...toUiNode(node), enabled: undefined }));
+    config.name = imported.profile?.title || config.name;
+    config.sourceType = imported.source || config.sourceType;
+    config.sourceUrl = imported.url || config.sourceUrl;
+    config.profileMeta = imported.profile || config.profileMeta || null;
+    config.updatedAt = new Date().toISOString();
+    config.selectedIndex = findMatchingNodeIndex(config.nodes, previousSelected);
+
+    if (state.activeConfigId === id) {
+      applyConfigToProfile(config);
+      render();
+      await generate();
+    }
+
+    const nextKeys = config.nodes.map(getNodeStableKey).join('\n');
+    state.configStatuses.set(id, {
+      type: 'ok',
+      message: previousKeys === nextKeys
+        ? 'Изменений у провайдера нет.'
+        : `Обновлено: ${config.nodes.length} сервер${getRussianPlural(config.nodes.length, '', 'а', 'ов')}.`
+    });
+    await renderSavedConfigs();
+    await saveAppState();
+  } catch (error) {
+    state.configStatuses.set(id, { type: 'error', message: error.message });
+    await renderSavedConfigs();
+  }
 }
 
 async function toggleRuntime() {
@@ -417,6 +723,7 @@ function render() {
 
   renderMode();
   renderNodes();
+  renderSavedConfigs();
 }
 
 function renderNodes() {
@@ -499,6 +806,10 @@ function switchTab(tab) {
   elements.tabPanels.forEach((panel) => {
     panel.classList.toggle('hidden', panel.dataset.tabPanel !== tab);
   });
+  elements.tabPreviews.forEach((panel) => {
+    panel.classList.toggle('hidden', panel.dataset.tabPreview !== tab);
+  });
+  elements.layout.classList.toggle('preview-hidden', tab !== 'settings');
 }
 
 function updateNodeCardState(card, node) {
@@ -508,6 +819,10 @@ function updateNodeCardState(card, node) {
   const meta = card.querySelector('[data-node-meta]');
   if (!meta) return;
 
+  meta.textContent = getNodeMeta(node);
+}
+
+function getNodeMeta(node) {
   const bits = [
     'VLESS',
     (node.network || 'tcp').toUpperCase(),
@@ -516,7 +831,7 @@ function updateNodeCardState(card, node) {
     node.packetEncoding || node['packet-encoding'] || ''
   ].filter(Boolean);
 
-  meta.textContent = bits.join(' · ');
+  return bits.join(' · ');
 }
 
 function renderMode() {
@@ -687,7 +1002,183 @@ function persistStateOnUnload() {
 function getAppStatePayload() {
   return {
     profile: state.profile,
-    importText: elements.importText.value
+    importText: elements.importText.value,
+    configs: state.configs,
+    activeConfigId: state.activeConfigId
+  };
+}
+
+function upsertImportedConfig(imported, importText) {
+  const existing = findExistingConfig(imported, importText);
+  const now = new Date().toISOString();
+  const nodes = imported.nodes.map((node) => ({ ...toUiNode(node), enabled: undefined }));
+  const name = imported.profile?.title || existing?.name || getImportDisplayName(imported, importText);
+  const previousSelected = existing ? existing.nodes[getConfigSelectedIndex(existing)] : null;
+  const config = existing || createSavedConfig({ name, importText, nodes });
+
+  config.name = name;
+  config.sourceType = imported.source || 'text';
+  config.sourceUrl = imported.url || (isRemoteUrl(importText) ? importText : '');
+  config.importText = importText;
+  config.userAgent = imported.userAgent || config.userAgent || '';
+  config.profileMeta = imported.profile || config.profileMeta || null;
+  config.nodes = nodes;
+  config.updatedAt = now;
+  config.selectedIndex = existing ? findMatchingNodeIndex(nodes, previousSelected) : 0;
+
+  if (!existing) {
+    state.configs.unshift(config);
+  }
+
+  state.expandedConfigIds.add(config.id);
+  state.configStatuses.set(config.id, { type: 'ok', message: `Сохранено автоматически: ${nodes.length} сервер${getRussianPlural(nodes.length, '', 'а', 'ов')}.` });
+  return config;
+}
+
+function findExistingConfig(imported, importText) {
+  const sourceUrl = imported.url || (isRemoteUrl(importText) ? importText : '');
+  if (sourceUrl) {
+    return state.configs.find((config) => config.sourceUrl === sourceUrl);
+  }
+  return null;
+}
+
+function createSavedConfig({ name, sourceType = 'text', sourceUrl = '', importText = '', nodes = [], selectedIndex = 0 }) {
+  const now = new Date().toISOString();
+  return {
+    id: makeConfigId(name || sourceUrl || importText || 'config'),
+    name: name || 'VPN конфиг',
+    sourceType,
+    sourceUrl,
+    importText,
+    profileMeta: null,
+    nodes,
+    selectedIndex: Math.max(0, selectedIndex),
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
+function normalizeSavedConfigs(configs) {
+  return (Array.isArray(configs) ? configs : [])
+    .filter((config) => config && Array.isArray(config.nodes) && config.nodes.length)
+    .map((config) => ({
+      id: String(config.id || makeConfigId(config.name || 'config')),
+      name: String(config.name || 'VPN конфиг'),
+      sourceType: String(config.sourceType || 'text'),
+      sourceUrl: String(config.sourceUrl || ''),
+      importText: String(config.importText || ''),
+      userAgent: String(config.userAgent || ''),
+      profileMeta: config.profileMeta || null,
+      nodes: config.nodes.map((node) => ({ ...toUiNode(node), enabled: undefined })),
+      selectedIndex: clampIndex(config.selectedIndex, config.nodes.length),
+      createdAt: config.createdAt || new Date().toISOString(),
+      updatedAt: config.updatedAt || config.createdAt || new Date().toISOString()
+    }));
+}
+
+function selectConfigServer(configId, selectedIndex) {
+  const config = state.configs.find((item) => item.id === configId);
+  if (!config) return;
+
+  config.selectedIndex = clampIndex(selectedIndex, config.nodes.length);
+  config.updatedAt = new Date().toISOString();
+  state.activeConfigId = config.id;
+  state.expandedConfigIds.add(config.id);
+  applyConfigToProfile(config);
+  render();
+  scheduleGenerate();
+  scheduleStateSave();
+}
+
+function applyConfigToProfile(config) {
+  const selectedIndex = getConfigSelectedIndex(config);
+  state.profile.name = config.name || state.profile.name || 'Mihomo VLESS Profile';
+  state.profile.nodes = config.nodes.map((node, index) => ({
+    ...node,
+    enabled: index === selectedIndex
+  }));
+}
+
+function getActiveConfig() {
+  return state.configs.find((config) => config.id === state.activeConfigId) || null;
+}
+
+function getConfigSelectedIndex(config) {
+  return clampIndex(config?.selectedIndex, config?.nodes?.length || 0);
+}
+
+function clampIndex(value, length) {
+  if (!length) return 0;
+  const index = Number(value);
+  if (!Number.isFinite(index)) return 0;
+  return Math.min(length - 1, Math.max(0, Math.floor(index)));
+}
+
+function findMatchingNodeIndex(nodes, previousNode) {
+  if (!nodes.length) return 0;
+  if (!previousNode) return 0;
+
+  const previousKey = getNodeStableKey(previousNode);
+  const index = nodes.findIndex((node) => getNodeStableKey(node) === previousKey);
+  return index === -1 ? 0 : index;
+}
+
+function getNodeStableKey(node) {
+  return `${node?.uuid || ''}:${node?.server || ''}:${node?.port || ''}:${node?.name || ''}`;
+}
+
+function getImportDisplayName(imported, importText) {
+  if (imported.url) {
+    try {
+      const url = new URL(imported.url);
+      return url.hostname.replace(/^www\./, '') || 'VPN конфиг';
+    } catch {
+      return 'VPN конфиг';
+    }
+  }
+
+  const firstNode = imported.nodes?.[0];
+  return firstNode?.name || 'VPN конфиг';
+}
+
+function isRemoteUrl(value) {
+  try {
+    const url = new URL(String(value || '').trim());
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function makeConfigId(value) {
+  const slug = String(value || 'config')
+    .toLowerCase()
+    .replace(/[^a-z0-9а-яё]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 42) || 'config';
+  return `${slug}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function getRussianPlural(number, one, few, many) {
+  const mod10 = Math.abs(number) % 10;
+  const mod100 = Math.abs(number) % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+function withTunEnabled(profile) {
+  return {
+    ...profile,
+    tun: {
+      stack: 'mixed',
+      autoRoute: true,
+      strictRoute: false,
+      dnsHijack: ['any:53'],
+      ...(profile?.tun || {}),
+      enabled: true
+    }
   };
 }
 

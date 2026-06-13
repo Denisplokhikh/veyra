@@ -20,14 +20,15 @@
   --success-soft: #14351f;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
-
+::-webkit-scrollbar {
+    display: none;
+}
 * {
   box-sizing: border-box;
 }
 
 html {
-  min-height: 100%;
-  background: var(--bg);
+  height: 400px;
 }
 
 body {
@@ -62,6 +63,7 @@ button:disabled {
   width: min(1500px, 100%);
   margin: 0 auto;
   padding: 20px;
+
 }
 
 .topbar {
@@ -157,7 +159,9 @@ h2 {
   color: var(--muted);
   font-size: 13px;
 }
-
+h3{
+  font-size: 15px;
+}
 .layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 480px);
@@ -165,6 +169,10 @@ h2 {
   align-items: start;
   width: 100%;
   min-width: 0;
+}
+
+.layout.preview-hidden {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .workspace {
@@ -556,7 +564,7 @@ pre {
 
 .saved-list {
   display: grid;
-  gap: 8px;
+  gap: 12px;
 }
 
 .runtime-status {
@@ -724,6 +732,154 @@ pre {
   padding: 10px;
 }
 
+.config-card {
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.config-card.selected {
+  border-color: var(--accent);
+  background: var(--field);
+}
+
+.config-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  min-width: 0;
+}
+
+.config-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  text-align: left;
+}
+
+.config-toggle::before {
+  content: "";
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  border-radius: 6px;
+
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+  background: url("arrow-right-1-svgrepo-com.svg") center / contain no-repeat;
+  transform-origin: center;
+  transition: transform 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.config-card.expanded .config-toggle::before {
+  transform: rotate(90deg);
+}
+
+.config-body-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: grid-template-rows 220ms ease, opacity 180ms ease;
+}
+
+.config-card.expanded .config-body-wrap {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.config-heading {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.config-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-select-label {
+  display: grid;
+  gap: 6px;
+}
+
+.config-status {
+  margin: -4px 12px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.config-status.ok {
+  color: var(--success);
+}
+
+.config-status.pending {
+  color: var(--accent-dark);
+}
+
+.config-status.error {
+  color: var(--danger);
+}
+
+.config-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow: hidden;
+  border-top: 1px solid var(--line);
+  background: #0b1220;
+  padding: 16px 18px 18px;
+}
+
+.config-servers-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  min-width: 0;
+}
+
+.config-servers-title h3 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.config-servers-title p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.config-ping-button {
+  min-width: 76px;
+}
+
+.config-server-list {
+  gap: 12px;
+}
+
+.config-server-card {
+  background: #0d1525;
+}
+
 .saved-item strong,
 .saved-item small {
   display: block;
@@ -811,6 +967,15 @@ pre {
 
   .saved-item {
     grid-template-columns: 1fr;
+  }
+
+  .config-header,
+  .config-servers-title {
+    grid-template-columns: 1fr;
+  }
+
+  .config-servers-title {
+    display: grid;
   }
 
   .saved-actions {

@@ -519,6 +519,8 @@ function normalizeAppState(state) {
   return {
     profile: isPlainObject(state?.profile) ? state.profile : null,
     importText: typeof state?.importText === 'string' ? state.importText : '',
+    configs: Array.isArray(state?.configs) ? state.configs.filter(isPlainObject) : [],
+    activeConfigId: typeof state?.activeConfigId === 'string' ? state.activeConfigId : null,
     updatedAt: typeof state?.updatedAt === 'string' ? state.updatedAt : null
   };
 }

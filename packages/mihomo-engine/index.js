@@ -35,7 +35,7 @@ export function createDefaultProfile() {
     ipv6: false,
     logLevel: 'info',
     tun: {
-      enabled: false,
+      enabled: true,
       stack: 'mixed',
       autoRoute: true,
       strictRoute: false,

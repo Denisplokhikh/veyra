@@ -10,7 +10,7 @@
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">v.0.1.0 (beta)</p>
+          <a class="eyebrow" href="https://github.com/Denisplokhikh/veyra" target="_blank">v.0.1.2 (beta)</a>
           <h1>Veyra</h1>
         </div>
         <div class="top-actions">
@@ -23,13 +23,13 @@
         <button data-tab="settings" type="button">Настройки</button>
       </nav>
 
-      <main class="layout">
+      <main class="layout preview-hidden">
         <section class="workspace">
           <section class="tab-panel" data-tab-panel="servers">
             <div class="panel hero-panel">
               <div>
-                <label for="profileName">Название профиля</label>
-                <input id="profileName" type="text" autocomplete="off">
+                <label for="profileName" readonly>Название профиля</label>
+                <input id="profileName" type="text" autocomplete="off" readonly>
               </div>
               <div class="status-grid" aria-live="polite">
                 <div>
@@ -50,12 +50,15 @@
             <div class="panel">
               <div class="section-title">
                 <h2>Импорт подписки</h2>
-                <button class="ghost" id="importBtn" type="button">Импортировать</button>
+                <div class="section-actions">
+                  <button class="ghost" id="pasteImportBtn" type="button">Вставить</button>
+                  <button class="ghost" id="importBtn" type="button">Импортировать</button>
+                </div>
               </div>
               <textarea id="importText" rows="5" placeholder="https://... или vless://... или base64-подписка"></textarea>
               <div id="importErrors" class="notice hidden"></div>
             </div>
-            <section class="panel runtime-panel">
+             <section class="panel runtime-panel">
             <div class="connection-card">
               <div class="connection-top">
                 <h2>Подключение</h2>
@@ -81,6 +84,17 @@
             </details>
           </section>
             <div class="panel">
+              <div class="section-title">
+                <div>
+                  <h2>Сохраненные конфиги</h2>
+                  <p class="section-caption">Выбери конфиг и сервер. Импортированные подписки сохраняются автоматически.</p>
+                </div>
+              </div>
+              <div id="savedProfiles" class="saved-list"></div>
+            </div>
+
+           
+            <div class="panel hidden">
               <div class="section-title">
                 <div>
                   <h2>Серверы</h2>
@@ -224,25 +238,16 @@
           </section>
         </section>
 
-        <aside class="preview">
+        <aside class="preview hidden" data-tab-preview="settings">
           <section class="panel yaml-panel">
             <div class="section-title">
               <h2>YAML</h2>
               <div class="preview-actions">
                 <button class="ghost" id="copyBtn" type="button">Копировать</button>
-                <button class="secondary" id="saveBtn" type="button">Сохранить</button>
               </div>
             </div>
             <div id="warnings" class="notice hidden"></div>
             <pre id="yamlPreview">Загрузка...</pre>
-            <a id="downloadLink" class="download hidden" href="#">Скачать последний профиль</a>
-          </section>
-          <section class="panel saved-panel">
-            <div class="section-title">
-              <h2>Сохраненные</h2>
-              <button class="ghost" id="refreshProfiles" type="button">Обновить</button>
-            </div>
-            <div id="savedProfiles" class="saved-list"></div>
           </section>
         </aside>
       </main>
