@@ -46,36 +46,3 @@ POST /api/runtime/start
 POST /api/runtime/stop
 GET  /api/runtime/logs
 ```
-
-Пример импорта удаленной подписки:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8787/api/import -ContentType 'application/json' -Body '{"text":"https://example.com/subscription-token"}'
-```
-
-Пример генерации:
-
-```powershell
-Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8787/api/generate -ContentType 'application/json' -Body (Get-Content examples/profile.request.json -Raw)
-```
-
-## Mihomo runtime
-
-Положи бинарник сюда:
-
-```text
-engine/bin/mihomo.exe
-```
-
-При нажатии `Старт` интерфейс отправит текущий профиль на backend, backend соберет `engine/configs/active.yaml` и запустит:
-
-```text
-engine/bin/mihomo.exe -f engine/configs/active.yaml
-```
-
-Если бинарник лежит в другом месте, запусти сервер с переменной:
-
-```powershell
-$env:MIHOMO_BIN='C:\path\to\mihomo.exe'
-node apps/api/server.js
-```
