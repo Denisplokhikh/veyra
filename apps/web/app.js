@@ -3,6 +3,12 @@ const state = {
   yaml: '',
   saveUrl: '',
   runtimeStatus: null,
+  traffic: {
+    up: 0,
+    down: 0,
+    totalUp: 0,
+    totalDown: 0
+  },
   configs: [],
   activeConfigId: null,
   configStatuses: new Map(),
@@ -34,11 +40,16 @@ const elements = {
   runtimeToggleText: document.querySelector('#runtimeToggleText'),
   runtimeState: document.querySelector('#runtimeState'),
   selectedRuntimeServer: document.querySelector('#selectedRuntimeServer'),
+  trafficUp: document.querySelector('#trafficUp'),
+  trafficDown: document.querySelector('#trafficDown'),
+  trafficTotalUp: document.querySelector('#trafficTotalUp'),
+  trafficTotalDown: document.querySelector('#trafficTotalDown'),
   runtimeBinary: document.querySelector('#runtimeBinary'),
   runtimeLogs: document.querySelector('#runtimeLogs'),
   tabButtons: Array.from(document.querySelectorAll('[data-tab]')),
   tabPanels: Array.from(document.querySelectorAll('[data-tab-panel]')),
   tabPreviews: Array.from(document.querySelectorAll('[data-tab-preview]')),
+  windowActionButtons: Array.from(document.querySelectorAll('[data-window-action]')),
   modeButtons: Array.from(document.querySelectorAll('[data-mode]')),
   mixedPort: document.querySelector('#mixedPort'),
   socksPort: document.querySelector('#socksPort'),
@@ -65,7 +76,6 @@ const elements = {
   blockAds: document.querySelector('#blockAds'),
   customRules: document.querySelector('#customRules')
 };
-
 let generateTimer = 0;
 let stateSaveTimer = 0;
 let isHydrating = true;
@@ -85,7 +95,9 @@ async function init() {
   await generate();
   await renderSavedConfigs();
   await loadRuntimeStatus();
+  await loadRuntimeTraffic();
   window.setInterval(loadRuntimeStatus, 5000);
+  window.setInterval(loadRuntimeTraffic, 1000);
 }
 
 function bindEvents() {
@@ -97,6 +109,13 @@ function bindEvents() {
   elements.importText.addEventListener('input', scheduleStateSave);
   elements.copyBtn.addEventListener('click', copyYaml);
   elements.runtimeToggle.addEventListener('click', toggleRuntime);
+
+  elements.windowActionButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const action = button.dataset.windowAction;
+      window.veyraWindow?.[action]?.();
+    });
+  });
 
   elements.addNodeBtn?.addEventListener('click', () => {
     state.profile.nodes.push(createEmptyNode());
@@ -198,7 +217,7 @@ async function loadInitialProfile() {
 
 async function loadSample() {
   state.profile = withTunEnabled(await request('/api/sample'));
-  state.profile.name = 'Mihomo VLESS Profile';
+  state.profile.name = '';
   state.profile.nodes = [];
   state.configs = [];
   state.activeConfigId = null;
@@ -573,7 +592,7 @@ async function removeSavedConfig(id) {
       applyConfigToProfile(nextConfig);
     } else {
       state.profile.nodes = [];
-      state.profile.name = 'Mihomo VLESS Profile';
+      state.profile.name = '';
       tcpPingResults.clear();
     }
   }
@@ -683,6 +702,21 @@ async function loadRuntimeStatus() {
   const status = await request('/api/runtime/status');
   renderRuntimeStatus(status);
   await loadRuntimeLogs();
+}
+
+async function loadRuntimeTraffic() {
+  try {
+    state.traffic = await request('/api/runtime/traffic');
+  } catch {
+    state.traffic = {
+      up: 0,
+      down: 0,
+      totalUp: state.traffic?.totalUp || 0,
+      totalDown: state.traffic?.totalDown || 0
+    };
+  }
+
+  renderTraffic();
 }
 
 async function loadRuntimeLogs() {
@@ -796,7 +830,16 @@ function renderNodeLatency(element, node) {
 function renderSelectedRuntimeServer() {
   const selected = getSelectedNode();
   renderEmojiText(elements.selectedRuntimeServer, selected?.name || 'Сервер не выбран');
+  renderTraffic();
   renderRuntimeControls();
+}
+
+function renderTraffic() {
+  const traffic = state.traffic || {};
+  if (elements.trafficUp) elements.trafficUp.textContent = `${formatBytes(traffic.up)} /s`;
+  if (elements.trafficDown) elements.trafficDown.textContent = `${formatBytes(traffic.down)} /s`;
+  if (elements.trafficTotalUp) elements.trafficTotalUp.textContent = formatBytes(traffic.totalUp);
+  if (elements.trafficTotalDown) elements.trafficTotalDown.textContent = formatBytes(traffic.totalDown);
 }
 
 function switchTab(tab) {
@@ -906,7 +949,7 @@ function renderImportErrors(errors = []) {
 }
 
 function updateProfileFromForm() {
-  state.profile.name = elements.profileName.value.trim() || 'Mihomo VLESS Profile';
+  state.profile.name = elements.profileName.value.trim() || '';
   state.profile.mixedPort = Number(elements.mixedPort.value) || 7890;
   state.profile.socksPort = Number(elements.socksPort.value) || 7891;
   state.profile.externalController = elements.externalController.value.trim() || '127.0.0.1:9090';
@@ -1093,7 +1136,7 @@ function selectConfigServer(configId, selectedIndex) {
 
 function applyConfigToProfile(config) {
   const selectedIndex = getConfigSelectedIndex(config);
-  state.profile.name = config.name || state.profile.name || 'Mihomo VLESS Profile';
+  state.profile.name = config.name || state.profile.name || '';
   state.profile.nodes = config.nodes.map((node, index) => ({
     ...node,
     enabled: index === selectedIndex
@@ -1305,6 +1348,17 @@ function splitRuleLines(value) {
 }
 function joinLines(value) {
   return Array.isArray(value) ? value.join('\n') : '';
+}
+
+function formatBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes <= 0) return '0 B';
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const amount = bytes / (1024 ** index);
+  const digits = amount >= 10 || index === 0 ? 0 : 1;
+  return `${amount.toFixed(digits)} ${units[index]}`;
 }
 
 function renderEmojiText(target, value) {

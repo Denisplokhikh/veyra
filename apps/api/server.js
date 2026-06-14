@@ -74,6 +74,10 @@ async function route(request, response) {
     return sendJson(response, 200, { ok: true, engine: 'mihomo', version: '0.1.0' });
   }
 
+  if (request.method === 'GET' && (url.pathname === '/api/runtime/traffic' || url.pathname === '/api/traffic')) {
+    return sendJson(response, 200, await runtime.traffic());
+  }
+
   if (request.method === 'GET' && url.pathname === '/api/sample') {
     return sendJson(response, 200, createDefaultProfile());
   }
@@ -302,7 +306,7 @@ async function fetchRemoteSubscription(url, options = {}) {
 
   if (bestAttempt) return bestAttempt;
 
-  throw publicError(502, `Could not fetch subscription: ${attempts.join('; ') || 'unknown error'}`);
+  throw publicError(502, 'Неподходящая ссылка. Вставь ссылку на подписку, vless:// или base64-подписку.');
 }
 
 async function readLimitedText(response, limit) {
@@ -712,3 +716,4 @@ function isEntrypoint() {
   const entry = process.argv[1] ? path.resolve(process.argv[1]) : '';
   return entry === fileURLToPath(import.meta.url);
 }
+

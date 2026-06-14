@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { app, BrowserWindow, Menu, nativeImage, shell, Tray } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import { startServer } from '../api/server.js';
 
 const APP_NAME = 'Veyra';
@@ -68,6 +68,7 @@ async function createMainWindow() {
 
 function createWindow() {
   const window = new BrowserWindow({
+    frame: false,
     width: 1320,
     height: 880,
     minWidth: 980,
@@ -77,6 +78,7 @@ function createWindow() {
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
+      preload: path.join(DESKTOP_DIR, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true
@@ -97,6 +99,25 @@ function createWindow() {
 
   return window;
 }
+
+ipcMain.on('window:minimize', (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.minimize();
+});
+
+ipcMain.on('window:maximize', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) return;
+
+  if (window.isMaximized()) {
+    window.unmaximize();
+  } else {
+    window.maximize();
+  }
+});
+
+ipcMain.on('window:close', (event) => {
+  BrowserWindow.fromWebContents(event.sender)?.close();
+});
 
 function setOpenAtLogin(openAtLogin) {
   app.setLoginItemSettings({

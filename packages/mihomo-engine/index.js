@@ -26,7 +26,7 @@ const ADS_RULES = [
 
 export function createDefaultProfile() {
   return {
-    name: 'Mihomo VLESS Profile',
+    name: 'New Profile',
     mode: 'rule',
     mixedPort: 7890,
     socksPort: 7891,

@@ -1,6 +1,6 @@
 {
   "name": "veyra",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Local VPN profile configurator for Mihomo/Clash-compatible VLESS configs.",
@@ -14,7 +14,7 @@
     "dev:desktop": "node apps/desktop/launch.js",
     "build:win": "electron-builder --win",
     "dist": "electron-builder",
-    "check": "node --check apps/api/server.js && node --check apps/api/mihomo-runtime.js && node --check apps/desktop/main.js && node --check apps/desktop/launch.js && node --check packages/mihomo-engine/index.js && node --check apps/web/app.js"
+    "check": "node --check apps/api/server.js && node --check apps/api/mihomo-runtime.js && node --check apps/desktop/main.js && node --check apps/desktop/launch.js && node --check apps/desktop/preload.cjs && node --check packages/mihomo-engine/index.js && node --check apps/web/app.js"
   },
   "devDependencies": {
     "electron": "^42.4.0",

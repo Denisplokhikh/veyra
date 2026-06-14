@@ -10,9 +10,18 @@ export function createMihomoRuntime({ root, resourceRoot = root, runtimeRoot = r
     configDir: path.join(runtimeRoot, 'engine/configs'),
     activeConfig: path.join(runtimeRoot, 'engine/configs/active.yaml'),
     logDir: path.join(runtimeRoot, 'engine/logs'),
-    logFile: path.join(runtimeRoot, 'engine/logs/mihomo.log')
+    logFile: path.join(runtimeRoot, 'engine/logs/mihomo.log'),
+    trafficState: path.join(runtimeRoot, 'engine/traffic-state.json')
   };
-
+  let traffic = {
+    up: 0,
+    down: 0,
+    totalUp: 0,
+    totalDown: 0,
+    updatedAt: null
+  };
+  let trafficAbortController = null;
+  let trafficSaveTimer = null;
   let child = null;
   let startedAt = null;
   let lastExit = null;
@@ -23,13 +32,15 @@ export function createMihomoRuntime({ root, resourceRoot = root, runtimeRoot = r
     status,
     start,
     stop,
-    logs
+    logs,
+    traffic: getTraffic
   };
 
   async function prepare() {
     paths.binary = await resolveMihomoBinary();
     await fs.mkdir(paths.configDir, { recursive: true });
     await fs.mkdir(paths.logDir, { recursive: true });
+    await loadTrafficState();
     scheduleLogAutoDelete();
   }
 
@@ -82,6 +93,8 @@ export function createMihomoRuntime({ root, resourceRoot = root, runtimeRoot = r
     child.stdout.on('data', (chunk) => logStream.write(chunk));
     child.stderr.on('data', (chunk) => logStream.write(chunk));
     child.on('exit', (code, signal) => {
+      stopTrafficWatcher();
+      void saveTrafficState();
       lastExit = { code, signal, at: new Date().toISOString() };
       logStream.write(`[${lastExit.at}] mihomo exited code=${code} signal=${signal || ''}\n`);
       logStream.end();
@@ -96,7 +109,7 @@ export function createMihomoRuntime({ root, resourceRoot = root, runtimeRoot = r
 
     await wait(800);
     await failIfTunAccessDenied();
-
+    startTrafficWatcher(profile);
     return {
       ...(await status()),
       summary: generated.summary,
@@ -110,6 +123,8 @@ export function createMihomoRuntime({ root, resourceRoot = root, runtimeRoot = r
     }
 
     const pid = child.pid;
+    stopTrafficWatcher();
+    await saveTrafficState();
     child.kill();
     return { ...(await status()), message: `Stop signal sent to ${pid}` };
   }
@@ -130,6 +145,128 @@ export function createMihomoRuntime({ root, resourceRoot = root, runtimeRoot = r
     } finally {
       await file.close();
     }
+  }
+
+  async function getTraffic() {
+    return { ...traffic };
+  }
+
+  async function loadTrafficState() {
+    try {
+      const saved = JSON.parse(await fs.readFile(paths.trafficState, 'utf8'));
+      traffic = {
+        up: 0,
+        down: 0,
+        totalUp: safeTrafficNumber(saved.totalUp),
+        totalDown: safeTrafficNumber(saved.totalDown),
+        updatedAt: typeof saved.updatedAt === 'string' ? saved.updatedAt : null
+      };
+    } catch {
+      traffic = {
+        up: 0,
+        down: 0,
+        totalUp: 0,
+        totalDown: 0,
+        updatedAt: null
+      };
+    }
+  }
+
+  async function saveTrafficState() {
+    clearTrafficSaveTimer();
+    await fs.mkdir(path.dirname(paths.trafficState), { recursive: true });
+    await fs.writeFile(paths.trafficState, JSON.stringify({
+      totalUp: Math.round(safeTrafficNumber(traffic.totalUp)),
+      totalDown: Math.round(safeTrafficNumber(traffic.totalDown)),
+      updatedAt: traffic.updatedAt || new Date().toISOString()
+    }, null, 2));
+  }
+
+  function scheduleTrafficSave() {
+    if (trafficSaveTimer) return;
+
+    trafficSaveTimer = setTimeout(() => {
+      trafficSaveTimer = null;
+      saveTrafficState().catch((error) => {
+        console.warn(`Could not save Mihomo traffic state: ${error.message}`);
+      });
+    }, 2000);
+    trafficSaveTimer.unref?.();
+  }
+
+  function clearTrafficSaveTimer() {
+    if (!trafficSaveTimer) return;
+    clearTimeout(trafficSaveTimer);
+    trafficSaveTimer = null;
+  }
+
+  function startTrafficWatcher(profile) {
+    stopTrafficWatcher();
+
+    const controllerUrl = `${getControllerBaseUrl(profile)}/traffic`;
+    trafficAbortController = new AbortController();
+
+    void watchTraffic(controllerUrl, trafficAbortController.signal);
+  }
+
+  async function watchTraffic(controllerUrl, signal) {
+    try {
+      const response = await fetch(controllerUrl, { signal });
+      if (!response.ok || !response.body) return;
+
+      let buffer = '';
+      for await (const chunk of response.body) {
+        buffer += Buffer.from(chunk).toString('utf8');
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          updateTrafficFromLine(line);
+        }
+      }
+    } catch (error) {
+      if (error.name !== 'AbortError') {
+        console.warn(`Could not read Mihomo traffic: ${error.message}`);
+      }
+    }
+  }
+
+  function updateTrafficFromLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+
+    try {
+      const data = JSON.parse(trimmed);
+      const up = safeTrafficNumber(data.up);
+      const down = safeTrafficNumber(data.down);
+
+      traffic.up = up;
+      traffic.down = down;
+      traffic.totalUp += up;
+      traffic.totalDown += down;
+      traffic.updatedAt = new Date().toISOString();
+      scheduleTrafficSave();
+    } catch {
+      // Mihomo traffic stream is line-delimited JSON; ignore malformed fragments.
+    }
+  }
+
+  function stopTrafficWatcher() {
+    if (trafficAbortController) {
+      trafficAbortController.abort();
+      trafficAbortController = null;
+    }
+
+    traffic.up = 0;
+    traffic.down = 0;
+  }
+
+  function getControllerBaseUrl(profile) {
+    const value = String(profile?.externalController || '127.0.0.1:9090').trim();
+    if (/^https?:\/\//i.test(value)) {
+      return value.replace(/\/+$/, '');
+    }
+    return `http://${value.replace(/\/+$/, '')}`;
   }
 
   function getBundledMihomoBinary() {
@@ -205,6 +342,11 @@ export function createMihomoRuntime({ root, resourceRoot = root, runtimeRoot = r
       return false;
     }
   }
+}
+
+function safeTrafficNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : 0;
 }
 
 function needsWindowsTunAdmin(profile) {
